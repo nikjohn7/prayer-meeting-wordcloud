@@ -16,7 +16,7 @@
         <p>Share a word or short phrase describing what you’re thankful to God for.</p>
         <form id="thanks-form" autocomplete="off">
           <input id="thanks-input" maxlength="60" placeholder="Type here and press Enter…" required />
-          <button type="submit" class="sr-only">Submit</button>
+          <button id="submit-entry" type="submit" class="primary-btn">Submit</button>
         </form>
         <p id="feedback" role="status" aria-live="polite"></p>
       </section>
@@ -24,7 +24,7 @@
       <section class="card stage stage-cloud" id="stage-cloud" hidden>
         <div class="cloud-header">
           <h2>Community Word Cloud</h2>
-          <button id="add-more" type="button">Make another entry</button>
+          <button id="add-more" type="button" class="primary-btn">Make another entry</button>
         </div>
         <div class="cloud-wrapper">
           <canvas id="word-cloud"></canvas>
