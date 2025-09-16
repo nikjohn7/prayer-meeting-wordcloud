@@ -1,103 +1,158 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import {
-    getFirestore,
-    collection,
-    addDoc,
-    serverTimestamp,
-    query,
-    orderBy,
-    onSnapshot,
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  serverTimestamp,
+  query,
+  orderBy,
+  onSnapshot,
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-  // TODO: replace with your Firebase project settings.
-  const firebaseConfig = {
-    apiKey: "YOUR_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "SENDER_ID",
-    appId: "APP_ID",
-  };
+// TODO: replace with your Firebase project settings.
+const firebaseConfig = {
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID",
+};
 
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  const thanksRef = collection(db, "thanks");
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const thanksRef = collection(db, "thanks");
 
-  const form = document.getElementById("thanks-form");
-  const input = document.getElementById("thanks-input");
-  const feedback = document.getElementById("feedback");
-  const emptyState = document.getElementById("empty-state");
-  const canvas = document.getElementById("word-cloud");
+const form = document.getElementById("thanks-form");
+const input = document.getElementById("thanks-input");
+const feedback = document.getElementById("feedback");
+const emptyState = document.getElementById("empty-state");
+const canvas = document.getElementById("word-cloud");
+const stageForm = document.getElementById("stage-form");
+const stageCloud = document.getElementById("stage-cloud");
+const addMoreBtn = document.getElementById("add-more");
 
-  const THANKS_TIMEOUT_MS = 2500;
-  let feedbackTimer = null;
+const THANKS_TIMEOUT_MS = 2500;
+let feedbackTimer = null;
+let latestEntries = [];
 
-  const showFeedback = (message, isError = false) => {
-    feedback.textContent = message;
-    feedback.style.color = isError ? "#c53030" : "#2f855a";
-    clearTimeout(feedbackTimer);
-    feedbackTimer = setTimeout(() => {
-      feedback.textContent = "";
-    }, THANKS_TIMEOUT_MS);
-  };
+const showFeedback = (message, isError = false) => {
+  feedback.textContent = message;
+  feedback.style.color = isError ? "#c53030" : "#2f855a";
+  clearTimeout(feedbackTimer);
+  if (!message) return;
+  feedbackTimer = setTimeout(() => {
+    feedback.textContent = "";
+  }, THANKS_TIMEOUT_MS);
+};
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const rawText = (input.value || "").trim();
-    if (!rawText) return;
+const showStage = (stage) => {
+  if (stage === "form") {
+    stageCloud.hidden = true;
+    stageForm.hidden = false;
+    requestAnimationFrame(() => input.focus({ preventScroll: true }));
+  } else {
+    stageForm.hidden = true;
+    stageCloud.hidden = false;
+    requestAnimationFrame(() => renderWordCloud(latestEntries));
+  }
+};
 
-    const normalized = rawText.toLowerCase();
-    try {
-      await addDoc(thanksRef, {
-        text: rawText,
-        normalized,
-        createdAt: serverTimestamp(),
-      });
-      input.value = "";
-      showFeedback("Thank you for sharing!");
-    } catch (err) {
-      console.error(err);
-      showFeedback("Something went wrong. Please try again.", true);
-    }
+const colorPalette = [
+  "#4f46e5",
+  "#0ea5e9",
+  "#f97316",
+  "#22c55e",
+  "#ec4899",
+  "#8b5cf6",
+  "#14b8a6",
+  "#ef4444",
+];
+
+addMoreBtn.addEventListener("click", () => {
+  showFeedback("");
+  showStage("form");
+});
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const rawText = (input.value || "").trim();
+  if (!rawText) return;
+
+  const normalized = rawText.toLowerCase();
+  try {
+    await addDoc(thanksRef, {
+      text: rawText,
+      normalized,
+      createdAt: serverTimestamp(),
+    });
+    input.value = "";
+    showFeedback("Thank you for sharing!");
+    showStage("cloud");
+  } catch (err) {
+    console.error(err);
+    showFeedback("Something went wrong. Please try again.", true);
+  }
+});
+
+const renderWordCloud = (entries) => {
+  if (stageCloud.hidden) {
+    return;
+  }
+
+  if (!entries.length) {
+    emptyState.style.display = "grid";
+    const context = canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    return;
+  }
+
+  emptyState.style.display = "none";
+  const wrapperRect = canvas.parentElement.getBoundingClientRect();
+  const targetWidth = Math.max(wrapperRect.width, 360);
+  const computedHeight = parseFloat(getComputedStyle(canvas).height) || 380;
+  canvas.width = targetWidth;
+  canvas.height = computedHeight;
+
+  const list = entries.map(({ text, count }) => [text, count]);
+  WordCloud(canvas, {
+    list,
+    backgroundColor: "rgba(0,0,0,0)",
+    color: () => colorPalette[Math.floor(Math.random() * colorPalette.length)],
+    weightFactor: (size) => 16 + size * 9,
+    maxRotation: 0,
+    shuffle: true,
+    rotateRatio: 0,
+    drawOutOfBound: false,
+    clearCanvas: true,
+  });
+};
+
+const thanksQuery = query(thanksRef, orderBy("createdAt", "asc"));
+onSnapshot(thanksQuery, (snapshot) => {
+  const aggregates = new Map();
+
+  snapshot.forEach((doc) => {
+    const data = doc.data();
+    if (!data?.normalized) return;
+    const current = aggregates.get(data.normalized) || {
+      text: data.text,
+      count: 0,
+    };
+    current.count += 1;
+    aggregates.set(data.normalized, current);
   });
 
-  const renderWordCloud = (entries) => {
-    if (!entries.length) {
-      emptyState.style.display = "block";
-      return;
-    }
+  latestEntries = Array.from(aggregates.values()).sort(
+    (a, b) => b.count - a.count
+  );
+  renderWordCloud(latestEntries);
+});
 
-    emptyState.style.display = "none";
-    const list = entries.map(({ text, count }) => [text, count]);
-    WordCloud(canvas, {
-      list,
-      backgroundColor: "rgba(0,0,0,0)",
-      color: () => "#343aeb",
-      weightFactor: (size) => 16 + size * 8,
-      maxRotation: 0,
-      shuffle: true,
-      rotateRatio: 0,
-      drawOutOfBound: false,
-    });
-  };
+window.addEventListener("resize", () => {
+  if (!stageCloud.hidden && latestEntries.length) {
+    renderWordCloud(latestEntries);
+  }
+});
 
-  const thanksQuery = query(thanksRef, orderBy("createdAt", "asc"));
-  onSnapshot(thanksQuery, (snapshot) => {
-    const aggregates = new Map();
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (!data?.normalized) return;
-      const current = aggregates.get(data.normalized) || {
-        text: data.text,
-        count: 0,
-      };
-      current.count += 1;
-      aggregates.set(data.normalized, current);
-    });
-
-    const entries = Array.from(aggregates.values()).sort(
-      (a, b) => b.count - a.count
-    );
-    renderWordCloud(entries);
-  });
+showStage("form");
